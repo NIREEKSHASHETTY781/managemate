@@ -15,16 +15,34 @@ export default function AuthGuard({
   const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
+
+    async function checkSession() {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+
+      if (error || !data.session) {
+        setAuthenticated(false);
+        setChecking(false);
+        router.replace("/login");
+      } else {
+        setAuthenticated(true);
+        setChecking(false);
+      }
+    }
+
+    checkSession();
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+
       if (session) {
         setAuthenticated(true);
         setChecking(false);
-      } else if (
-        event === "SIGNED_OUT" ||
-        event === "INITIAL_SESSION"
-      ) {
+      } else if (event === "SIGNED_OUT") {
         setAuthenticated(false);
         setChecking(false);
         router.replace("/login");
@@ -32,6 +50,7 @@ export default function AuthGuard({
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, [router]);

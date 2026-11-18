@@ -1,6 +1,6 @@
 
 "use client";
-// Trigger fresh Vercel deployment
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
@@ -18,6 +18,54 @@ type Plan = {
   price: string;
 };
 
+type MonthlyStat = {
+  month: string;
+  customers: number;
+  appointments: number;
+};
+
+type AppointmentStatus = {
+  name: string;
+  count: number;
+};
+
+function getLastSixMonths(now: Date): MonthlyStat[] {
+  const months: MonthlyStat[] = [];
+
+  for (let i = 5; i >= 0; i--) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+
+    months.push({
+      month: date.toLocaleString("en-IN", { month: "short" }),
+      customers: 0,
+      appointments: 0,
+    });
+  }
+
+  return months;
+}
+
+function getMonthIndex(
+  value: string | null | undefined,
+  now: Date
+): number {
+  if (!value) return -1;
+
+  const date = new Date(
+    value.length === 10 ? `${value}T12:00:00` : value
+  );
+
+  if (Number.isNaN(date.getTime())) return -1;
+
+  const difference =
+    (now.getFullYear() - date.getFullYear()) * 12 +
+    (now.getMonth() - date.getMonth());
+
+  if (difference < 0 || difference > 5) return -1;
+
+  return 5 - difference;
+}
+
 export default function Home() {
   const router = useRouter();
 
@@ -27,6 +75,10 @@ export default function Home() {
   const [pendingCount, setPendingCount] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [monthlyStats, setMonthlyStats] = useState<MonthlyStat[]>([]);
+  const [appointmentStatuses, setAppointmentStatuses] = useState<
+    AppointmentStatus[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -41,6 +93,7 @@ export default function Home() {
   const menu = [
     "Overview",
     "Customers",
+    "Import Customers",
     "Appointments",
     "Reports",
     "Subscription",
@@ -67,30 +120,47 @@ export default function Home() {
           pendingResult,
           completedResult,
           recentResult,
+          customerHistoryResult,
+          appointmentHistoryResult,
         ] = await Promise.all([
-          supabase.from("customers")
+          supabase
+            .from("customers")
             .select("*", { count: "exact", head: true })
             .eq("user_id", userId),
 
-          supabase.from("appointments")
+          supabase
+            .from("appointments")
             .select("*", { count: "exact", head: true })
             .eq("user_id", userId),
 
-          supabase.from("appointments")
+          supabase
+            .from("appointments")
             .select("*", { count: "exact", head: true })
             .eq("user_id", userId)
             .eq("status", "Scheduled"),
 
-          supabase.from("appointments")
+          supabase
+            .from("appointments")
             .select("*", { count: "exact", head: true })
             .eq("user_id", userId)
             .eq("status", "Completed"),
 
-          supabase.from("customers")
+          supabase
+            .from("customers")
             .select("id, name, email")
             .eq("user_id", userId)
             .order("created_at", { ascending: false })
             .limit(5),
+
+          supabase
+            .from("customers")
+            .select("created_at")
+            .eq("user_id", userId),
+
+          supabase
+            .from("appointments")
+            .select("status, appointment_date")
+            .eq("user_id", userId),
         ]);
 
         if (customerResult.error) throw customerResult.error;
@@ -98,12 +168,50 @@ export default function Home() {
         if (pendingResult.error) throw pendingResult.error;
         if (completedResult.error) throw completedResult.error;
         if (recentResult.error) throw recentResult.error;
+        if (customerHistoryResult.error) throw customerHistoryResult.error;
+        if (appointmentHistoryResult.error) {
+          throw appointmentHistoryResult.error;
+        }
 
         setCustomerCount(customerResult.count ?? 0);
         setAppointmentCount(appointmentResult.count ?? 0);
         setPendingCount(pendingResult.count ?? 0);
         setCompletedCount(completedResult.count ?? 0);
         setCustomers(recentResult.data ?? []);
+
+        // Calculate dates only after the component has loaded.
+        const now = new Date();
+        const updatedMonthlyStats = getLastSixMonths(now);
+
+        (customerHistoryResult.data ?? []).forEach((customer) => {
+          const index = getMonthIndex(customer.created_at, now);
+
+          if (index !== -1) {
+            updatedMonthlyStats[index].customers++;
+          }
+        });
+
+        const statusCounts: Record<string, number> = {};
+
+        (appointmentHistoryResult.data ?? []).forEach((appointment) => {
+          const index = getMonthIndex(appointment.appointment_date, now);
+
+          if (index !== -1) {
+            updatedMonthlyStats[index].appointments++;
+          }
+
+          const status = appointment.status || "Other";
+          statusCounts[status] = (statusCounts[status] || 0) + 1;
+        });
+
+        setMonthlyStats(updatedMonthlyStats);
+
+        setAppointmentStatuses(
+          Object.entries(statusCounts).map(([name, count]) => ({
+            name,
+            count,
+          }))
+        );
       } catch (error) {
         setMessage(
           error instanceof Error ? error.message : "Unable to load dashboard."
@@ -186,6 +294,48 @@ export default function Home() {
     },
   ];
 
+  const maxMonthlyValue = Math.max(
+    1,
+    ...monthlyStats.map((item) =>
+      Math.max(item.customers, item.appointments)
+    )
+  );
+
+  const statusTotal = appointmentStatuses.reduce(
+    (total, item) => total + item.count,
+    0
+  );
+
+  const statusColors = [
+    "bg-emerald-500",
+    "bg-indigo-500",
+    "bg-amber-500",
+    "bg-purple-500",
+    "bg-slate-400",
+  ];
+
+  let currentPercentage = 0;
+
+  const statusGradient =
+    statusTotal === 0
+      ? "#e2e8f0 0% 100%"
+      : appointmentStatuses
+          .map((item, index) => {
+            const start = currentPercentage;
+            currentPercentage += (item.count / statusTotal) * 100;
+
+            const color = [
+              "#10b981",
+              "#6366f1",
+              "#f59e0b",
+              "#a855f7",
+              "#94a3b8",
+            ][index % 5];
+
+            return `${color} ${start}% ${currentPercentage}%`;
+          })
+          .join(", ");
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-slate-50 text-slate-800 md:flex">
@@ -205,6 +355,8 @@ export default function Home() {
                 onClick={() => {
                   if (item === "Customers") {
                     router.push("/customers");
+                  } else if (item === "Import Customers") {
+                    router.push("/import-customers");
                   } else if (item === "Appointments") {
                     router.push("/appointments");
                   } else {
@@ -287,7 +439,124 @@ export default function Home() {
                 ))}
               </section>
 
-              <section className="mt-8 grid gap-6 xl:grid-cols-3">
+              <section className="mt-8 grid gap-6 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+                  <h3 className="text-lg font-bold">Customer Growth</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    New customers added over the last six months
+                  </p>
+
+                  <div className="mt-8 flex h-52 items-end justify-between gap-3">
+                    {monthlyStats.map((item) => (
+                      <div
+                        key={item.month}
+                        className="flex h-full flex-1 flex-col items-center justify-end gap-2"
+                      >
+                        <span className="text-xs font-semibold text-slate-600">
+                          {item.customers}
+                        </span>
+                        <div className="flex h-36 w-full items-end justify-center">
+                          <div
+                            className="w-full max-w-12 rounded-t-lg bg-indigo-500 transition-all"
+                            style={{
+                              height: `${
+                                (item.customers / maxMonthlyValue) * 100
+                              }%`,
+                              minHeight: item.customers > 0 ? "5px" : "0px",
+                            }}
+                          />
+                        </div>
+                        <span className="text-xs text-slate-500">
+                          {item.month}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+                  <h3 className="text-lg font-bold">Appointment Activity</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Appointments by month
+                  </p>
+
+                  <div className="mt-8 flex h-52 items-end justify-between gap-3">
+                    {monthlyStats.map((item) => (
+                      <div
+                        key={item.month}
+                        className="flex h-full flex-1 flex-col items-center justify-end gap-2"
+                      >
+                        <span className="text-xs font-semibold text-slate-600">
+                          {item.appointments}
+                        </span>
+                        <div className="flex h-36 w-full items-end justify-center">
+                          <div
+                            className="w-full max-w-12 rounded-t-lg bg-emerald-500 transition-all"
+                            style={{
+                              height: `${
+                                (item.appointments / maxMonthlyValue) * 100
+                              }%`,
+                              minHeight:
+                                item.appointments > 0 ? "5px" : "0px",
+                            }}
+                          />
+                        </div>
+                        <span className="text-xs text-slate-500">
+                          {item.month}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              <section className="mt-6 grid gap-6 xl:grid-cols-3">
+                <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+                  <h3 className="text-lg font-bold">Appointment Status</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Distribution of your appointments
+                  </p>
+
+                  <div className="mt-6 flex flex-wrap items-center justify-center gap-8">
+                    <div
+                      className="flex h-36 w-36 items-center justify-center rounded-full"
+                      style={{
+                        background: `conic-gradient(${statusGradient})`,
+                      }}
+                    >
+                      <div className="flex h-24 w-24 items-center justify-center rounded-full bg-white">
+                        <div className="text-center">
+                          <p className="text-2xl font-bold">{statusTotal}</p>
+                          <p className="text-xs text-slate-500">Total</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {appointmentStatuses.length === 0 && (
+                        <p className="text-sm text-slate-500">
+                          No appointment data yet.
+                        </p>
+                      )}
+
+                      {appointmentStatuses.map((item, index) => (
+                        <div
+                          key={item.name}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <span
+                            className={`h-3 w-3 rounded-full ${
+                              statusColors[index % statusColors.length]
+                            }`}
+                          />
+                          <span className="text-slate-600">{item.name}</span>
+                          <span className="font-semibold">{item.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm xl:col-span-2">
                   <h3 className="text-lg font-bold">Recent Customers</h3>
                   <p className="mt-1 text-sm text-slate-500">
@@ -326,25 +595,25 @@ export default function Home() {
                     )}
                   </div>
                 </div>
+              </section>
 
-                <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-                  <h3 className="text-lg font-bold">Subscription</h3>
-                  <div className="mt-6 rounded-xl bg-indigo-50 p-5">
-                    <p className="text-sm text-indigo-600">Current Plan</p>
-                    <h3 className="mt-2 text-2xl font-bold text-indigo-800">
-                      Free
-                    </h3>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Perfect for getting started.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setActive("Subscription")}
-                    className="mt-5 w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
-                  >
-                    Explore Plans →
-                  </button>
+              <section className="mt-6 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+                <h3 className="text-lg font-bold">Subscription</h3>
+                <div className="mt-5 max-w-sm rounded-xl bg-indigo-50 p-5">
+                  <p className="text-sm text-indigo-600">Current Plan</p>
+                  <h3 className="mt-2 text-2xl font-bold text-indigo-800">
+                    Free
+                  </h3>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Perfect for getting started.
+                  </p>
                 </div>
+                <button
+                  onClick={() => setActive("Subscription")}
+                  className="mt-5 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
+                >
+                  Explore Plans →
+                </button>
               </section>
             </>
           )}
@@ -377,50 +646,79 @@ export default function Home() {
                 ))}
               </div>
 
-              <div className="rounded-2xl border bg-white p-6 shadow-sm">
-                <h3 className="text-lg font-bold">Appointment Summary</h3>
-                <div className="mt-5 space-y-4">
-                  <div>
-                    <div className="mb-2 flex justify-between text-sm">
-                      <span>Completed</span>
-                      <span>{completedCount}</span>
+              <div className="grid gap-6 xl:grid-cols-2">
+                <div className="rounded-2xl border bg-white p-6 shadow-sm">
+                  <h3 className="text-lg font-bold">Monthly Customer Growth</h3>
+                  <div className="mt-6 space-y-4">
+                    {monthlyStats.map((item) => (
+                      <div key={item.month}>
+                        <div className="mb-1 flex justify-between text-sm">
+                          <span>{item.month}</span>
+                          <span className="font-semibold">
+                            {item.customers}
+                          </span>
+                        </div>
+                        <div className="h-3 rounded-full bg-slate-100">
+                          <div
+                            className="h-3 rounded-full bg-indigo-500"
+                            style={{
+                              width: `${
+                                (item.customers / maxMonthlyValue) * 100
+                              }%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border bg-white p-6 shadow-sm">
+                  <h3 className="text-lg font-bold">Appointment Summary</h3>
+                  <div className="mt-5 space-y-4">
+                    <div>
+                      <div className="mb-2 flex justify-between text-sm">
+                        <span>Completed</span>
+                        <span>{completedCount}</span>
+                      </div>
+                      <div className="h-3 rounded-full bg-slate-100">
+                        <div
+                          className="h-3 rounded-full bg-emerald-500"
+                          style={{
+                            width: `${
+                              appointmentCount
+                                ? (completedCount / appointmentCount) * 100
+                                : 0
+                            }%`,
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="h-3 rounded-full bg-slate-100">
-                      <div
-                        className="h-3 rounded-full bg-emerald-500"
-                        style={{
-                          width: `${
-                            appointmentCount
-                              ? (completedCount / appointmentCount) * 100
-                              : 0
-                          }%`,
-                        }}
-                      />
+
+                    <div>
+                      <div className="mb-2 flex justify-between text-sm">
+                        <span>Scheduled</span>
+                        <span>{pendingCount}</span>
+                      </div>
+                      <div className="h-3 rounded-full bg-slate-100">
+                        <div
+                          className="h-3 rounded-full bg-indigo-500"
+                          style={{
+                            width: `${
+                              appointmentCount
+                                ? (pendingCount / appointmentCount) * 100
+                                : 0
+                            }%`,
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div>
-                    <div className="mb-2 flex justify-between text-sm">
-                      <span>Scheduled</span>
-                      <span>{pendingCount}</span>
-                    </div>
-                    <div className="h-3 rounded-full bg-slate-100">
-                      <div
-                        className="h-3 rounded-full bg-indigo-500"
-                        style={{
-                          width: `${
-                            appointmentCount
-                              ? (pendingCount / appointmentCount) * 100
-                              : 0
-                          }%`,
-                        }}
-                      />
-                    </div>
-                  </div>
+                  <p className="mt-5 text-xs text-slate-400">
+                    Reports are based on records currently stored in your account.
+                  </p>
                 </div>
-                <p className="mt-5 text-xs text-slate-400">
-                  Reports are based on records currently stored in your account.
-                </p>
               </div>
             </section>
           )}

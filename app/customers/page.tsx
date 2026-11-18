@@ -22,8 +22,10 @@ export default function CustomersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [search, setSearch] = useState("");
   const [message, setMessage] = useState("Loading customers...");
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function loadCustomers() {
     try {
@@ -63,6 +65,9 @@ export default function CustomersPage() {
   }
 
   async function handleDeleteCustomer(id: string) {
+    setDeletingId(id);
+    setMessage("");
+
     try {
       await deleteCustomer(id);
       await loadCustomers();
@@ -71,7 +76,61 @@ export default function CustomersPage() {
       setMessage(
         error instanceof Error ? error.message : "Could not delete customer."
       );
+    } finally {
+      setDeletingId(null);
     }
+  }
+
+  const filteredCustomers = customers.filter((customer) => {
+    const searchTerm = search.toLowerCase().trim();
+
+    return (
+      customer.name.toLowerCase().includes(searchTerm) ||
+      (customer.email || "").toLowerCase().includes(searchTerm) ||
+      (customer.phone || "").toLowerCase().includes(searchTerm)
+    );
+  });
+
+  function exportCustomers() {
+    if (filteredCustomers.length === 0) {
+      setMessage("No customer records available to export.");
+      return;
+    }
+
+    const headers = ["Name", "Email", "Phone"];
+
+    const escapeCSV = (value: string | null) => {
+      const safeValue = value || "";
+      return `"${safeValue.replace(/"/g, '""')}"`;
+    };
+
+    const rows = filteredCustomers.map((customer) =>
+      [
+        customer.name,
+        customer.email,
+        customer.phone,
+      ]
+        .map(escapeCSV)
+        .join(",")
+    );
+
+    const csvContent = [headers.join(","), ...rows].join("\n");
+
+    const blob = new Blob(["\uFEFF" + csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "managemate-customers.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+    setMessage(`${filteredCustomers.length} customer records exported successfully!`);
   }
 
   return (
@@ -136,9 +195,32 @@ export default function CustomersPage() {
           </form>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-xl font-bold text-slate-900">
-              Your Customers ({customers.length})
-            </h2>
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Your Customers ({customers.length})
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Showing {filteredCustomers.length} matching records
+                </p>
+              </div>
+
+              <button
+                onClick={exportCustomers}
+                disabled={filteredCustomers.length === 0}
+                className="rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                ↓ Export CSV
+              </button>
+            </div>
+
+            <input
+              type="search"
+              placeholder="Search by name, email or phone..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="mb-5 w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500"
+            />
 
             {message && (
               <p className="mb-4 text-sm font-medium text-indigo-700">
@@ -152,7 +234,13 @@ export default function CustomersPage() {
               </p>
             )}
 
-            {customers.map((customer) => (
+            {customers.length > 0 && filteredCustomers.length === 0 && (
+              <p className="py-5 text-slate-500">
+                No customers match your search.
+              </p>
+            )}
+
+            {filteredCustomers.map((customer) => (
               <div
                 key={customer.id}
                 className="mb-3 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4"
@@ -171,9 +259,10 @@ export default function CustomersPage() {
 
                 <button
                   onClick={() => handleDeleteCustomer(customer.id)}
-                  className="rounded-lg bg-red-100 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-200"
+                  disabled={deletingId === customer.id}
+                  className="rounded-lg bg-red-100 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-200 disabled:opacity-50"
                 >
-                  Delete
+                  {deletingId === customer.id ? "Deleting..." : "Delete"}
                 </button>
               </div>
             ))}
