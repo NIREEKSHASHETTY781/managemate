@@ -13,6 +13,11 @@ type Customer = {
   email: string | null;
 };
 
+type Plan = {
+  name: string;
+  price: string;
+};
+
 export default function Home() {
   const router = useRouter();
 
@@ -29,6 +34,9 @@ export default function Home() {
   const [ownerName, setOwnerName] = useState("Admin User");
   const [businessEmail, setBusinessEmail] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
+
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [paymentDone, setPaymentDone] = useState(false);
 
   const menu = [
     "Overview",
@@ -53,8 +61,13 @@ export default function Home() {
 
         setBusinessEmail(sessionData.session.user.email || "");
 
-        const [customerResult, appointmentResult, pendingResult,
-          completedResult, recentResult] = await Promise.all([
+        const [
+          customerResult,
+          appointmentResult,
+          pendingResult,
+          completedResult,
+          recentResult,
+        ] = await Promise.all([
           supabase.from("customers")
             .select("*", { count: "exact", head: true })
             .eq("user_id", userId),
@@ -112,15 +125,65 @@ export default function Home() {
   }
 
   useEffect(() => {
-    setBusinessName(localStorage.getItem("manageMateBusinessName") || "My Business");
-    setOwnerName(localStorage.getItem("manageMateOwnerName") || "Admin User");
+    setBusinessName(
+      localStorage.getItem("manageMateBusinessName") || "My Business"
+    );
+    setOwnerName(
+      localStorage.getItem("manageMateOwnerName") || "Admin User"
+    );
   }, []);
 
   const stats = [
-    { title: "Total Customers", value: loading ? "..." : customerCount, icon: "👥" },
-    { title: "Appointments", value: loading ? "..." : appointmentCount, icon: "📅" },
-    { title: "Completed", value: loading ? "..." : completedCount, icon: "✅" },
-    { title: "Scheduled", value: loading ? "..." : pendingCount, icon: "📋" },
+    {
+      title: "Total Customers",
+      value: loading ? "..." : customerCount,
+      icon: "👥",
+    },
+    {
+      title: "Appointments",
+      value: loading ? "..." : appointmentCount,
+      icon: "📅",
+    },
+    {
+      title: "Completed",
+      value: loading ? "..." : completedCount,
+      icon: "✅",
+    },
+    {
+      title: "Scheduled",
+      value: loading ? "..." : pendingCount,
+      icon: "📋",
+    },
+  ];
+
+  const plans = [
+    {
+      name: "Free",
+      price: "₹0",
+      features: [
+        "Basic dashboard",
+        "Customer management",
+        "Appointment management",
+      ],
+    },
+    {
+      name: "Pro",
+      price: "₹299",
+      features: [
+        "Everything in Free",
+        "Advanced reports",
+        "Business insights",
+      ],
+    },
+    {
+      name: "Premium",
+      price: "₹599",
+      features: [
+        "Everything in Pro",
+        "Priority support",
+        "Advanced analytics",
+      ],
+    },
   ];
 
   return (
@@ -165,7 +228,11 @@ export default function Home() {
               Unlock advanced reports and business tools.
             </p>
             <button
-              onClick={() => setActive("Subscription")}
+              onClick={() => {
+                setActive("Subscription");
+                setSelectedPlan(null);
+                setPaymentDone(false);
+              }}
               className="mt-4 w-full rounded-lg bg-indigo-600 py-2 text-sm text-white"
             >
               View Plans
@@ -176,7 +243,9 @@ export default function Home() {
         <main className="min-w-0 flex-1 p-5 md:p-9">
           <header className="mb-9 flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-sm text-slate-500">Workspace / {active}</p>
+              <p className="text-sm text-slate-500">
+                Workspace / {active}
+              </p>
               <h2 className="mt-1 text-3xl font-bold">{active}</h2>
               <p className="mt-2 text-sm text-slate-500">
                 Welcome back! Here's what's happening with your business.
@@ -205,7 +274,10 @@ export default function Home() {
             <>
               <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
                 {stats.map((stat) => (
-                  <div key={stat.title} className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+                  <div
+                    key={stat.title}
+                    className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm"
+                  >
                     <div className="flex items-center justify-between">
                       <p className="text-sm text-slate-500">{stat.title}</p>
                       <span className="text-2xl">{stat.icon}</span>
@@ -218,7 +290,9 @@ export default function Home() {
               <section className="mt-8 grid gap-6 xl:grid-cols-3">
                 <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm xl:col-span-2">
                   <h3 className="text-lg font-bold">Recent Customers</h3>
-                  <p className="mt-1 text-sm text-slate-500">Your latest customer activity</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Your latest customer activity
+                  </p>
 
                   <div className="mt-6 overflow-x-auto">
                     <table className="w-full text-left text-sm">
@@ -230,15 +304,25 @@ export default function Home() {
                       </thead>
                       <tbody>
                         {customers.map((customer) => (
-                          <tr key={customer.id} className="border-b border-slate-100">
-                            <td className="py-4 font-semibold">{customer.name}</td>
-                            <td className="py-4 text-slate-500">{customer.email || "—"}</td>
+                          <tr
+                            key={customer.id}
+                            className="border-b border-slate-100"
+                          >
+                            <td className="py-4 font-semibold">
+                              {customer.name}
+                            </td>
+                            <td className="py-4 text-slate-500">
+                              {customer.email || "—"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+
                     {!loading && customers.length === 0 && (
-                      <p className="py-5 text-sm text-slate-500">No customers added yet.</p>
+                      <p className="py-5 text-sm text-slate-500">
+                        No customers added yet.
+                      </p>
                     )}
                   </div>
                 </div>
@@ -247,8 +331,12 @@ export default function Home() {
                   <h3 className="text-lg font-bold">Subscription</h3>
                   <div className="mt-6 rounded-xl bg-indigo-50 p-5">
                     <p className="text-sm text-indigo-600">Current Plan</p>
-                    <h3 className="mt-2 text-2xl font-bold text-indigo-800">Free</h3>
-                    <p className="mt-2 text-xs text-slate-500">Perfect for getting started.</p>
+                    <h3 className="mt-2 text-2xl font-bold text-indigo-800">
+                      Free
+                    </h3>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Perfect for getting started.
+                    </p>
                   </div>
                   <button
                     onClick={() => setActive("Subscription")}
@@ -265,7 +353,9 @@ export default function Home() {
             <section className="space-y-6">
               <div>
                 <h3 className="text-xl font-bold">Business Reports</h3>
-                <p className="mt-1 text-sm text-slate-500">An overview of your business activity.</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  An overview of your business activity.
+                </p>
               </div>
 
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -275,7 +365,10 @@ export default function Home() {
                   ["Completed Appointments", completedCount],
                   ["Scheduled Appointments", pendingCount],
                 ].map(([label, value]) => (
-                  <div key={String(label)} className="rounded-2xl border bg-white p-6 shadow-sm">
+                  <div
+                    key={String(label)}
+                    className="rounded-2xl border bg-white p-6 shadow-sm"
+                  >
                     <p className="text-sm text-slate-500">{label}</p>
                     <h3 className="mt-3 text-3xl font-bold text-indigo-700">
                       {loading ? "..." : value}
@@ -289,18 +382,39 @@ export default function Home() {
                 <div className="mt-5 space-y-4">
                   <div>
                     <div className="mb-2 flex justify-between text-sm">
-                      <span>Completed</span><span>{completedCount}</span>
+                      <span>Completed</span>
+                      <span>{completedCount}</span>
                     </div>
                     <div className="h-3 rounded-full bg-slate-100">
-                      <div className="h-3 rounded-full bg-emerald-500" style={{ width: `${appointmentCount ? completedCount / appointmentCount * 100 : 0}%` }} />
+                      <div
+                        className="h-3 rounded-full bg-emerald-500"
+                        style={{
+                          width: `${
+                            appointmentCount
+                              ? (completedCount / appointmentCount) * 100
+                              : 0
+                          }%`,
+                        }}
+                      />
                     </div>
                   </div>
+
                   <div>
                     <div className="mb-2 flex justify-between text-sm">
-                      <span>Scheduled</span><span>{pendingCount}</span>
+                      <span>Scheduled</span>
+                      <span>{pendingCount}</span>
                     </div>
                     <div className="h-3 rounded-full bg-slate-100">
-                      <div className="h-3 rounded-full bg-indigo-500" style={{ width: `${appointmentCount ? pendingCount / appointmentCount * 100 : 0}%` }} />
+                      <div
+                        className="h-3 rounded-full bg-indigo-500"
+                        style={{
+                          width: `${
+                            appointmentCount
+                              ? (pendingCount / appointmentCount) * 100
+                              : 0
+                          }%`,
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
@@ -313,43 +427,127 @@ export default function Home() {
 
           {active === "Subscription" && (
             <section>
-              <h3 className="text-xl font-bold">Choose Your Plan</h3>
-              <p className="mt-1 text-sm text-slate-500">Select the plan that suits your business.</p>
+              {!selectedPlan ? (
+                <>
+                  <h3 className="text-xl font-bold">Choose Your Plan</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Select the plan that suits your business.
+                  </p>
 
-              <div className="mt-6 grid gap-6 md:grid-cols-3">
-                {[
-                  { name: "Free", price: "₹0", features: ["Basic dashboard", "Customer management", "Appointment management"] },
-                  { name: "Pro", price: "₹299", features: ["Everything in Free", "Advanced reports", "Business insights"] },
-                  { name: "Premium", price: "₹599", features: ["Everything in Pro", "Priority support", "Advanced analytics"] },
-                ].map((plan) => (
-                  <div key={plan.name} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <h3 className="text-xl font-bold">{plan.name}</h3>
-                    <p className="mt-4 text-3xl font-bold text-indigo-700">
-                      {plan.price}<span className="text-sm font-normal text-slate-500"> / month</span>
-                    </p>
-                    <ul className="my-7 space-y-3 text-sm text-slate-600">
-                      {plan.features.map((feature) => <li key={feature}>✓ {feature}</li>)}
-                    </ul>
-                    <button
-                      onClick={() => alert("This is a demonstration. No payment will be processed.")}
-                      className="w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white hover:bg-indigo-700"
-                    >
-                      Choose {plan.name}
-                    </button>
+                  <div className="mt-6 grid gap-6 md:grid-cols-3">
+                    {plans.map((plan) => (
+                      <div
+                        key={plan.name}
+                        className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+                      >
+                        <h3 className="text-xl font-bold">{plan.name}</h3>
+                        <p className="mt-4 text-3xl font-bold text-indigo-700">
+                          {plan.price}
+                          <span className="text-sm font-normal text-slate-500">
+                            {" "} / month
+                          </span>
+                        </p>
+
+                        <ul className="my-7 space-y-3 text-sm text-slate-600">
+                          {plan.features.map((feature) => (
+                            <li key={feature}>✓ {feature}</li>
+                          ))}
+                        </ul>
+
+                        <button
+                          onClick={() => {
+                            setSelectedPlan({
+                              name: plan.name,
+                              price: plan.price,
+                            });
+                            setPaymentDone(false);
+                          }}
+                          className="w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white hover:bg-indigo-700"
+                        >
+                          Choose {plan.name}
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              ) : paymentDone ? (
+                <div className="max-w-xl rounded-2xl border border-emerald-200 bg-white p-8 shadow-sm">
+                  <div className="text-4xl text-emerald-600">✓</div>
+                  <h3 className="mt-4 text-2xl font-bold text-emerald-700">
+                    Demo Payment Successful!
+                  </h3>
+                  <p className="mt-3 text-slate-600">
+                    You selected the {selectedPlan.name} plan for{" "}
+                    {selectedPlan.price} per month.
+                  </p>
+                  <p className="mt-3 text-sm text-slate-500">
+                    This is a simulated transaction. No real payment was
+                    processed and your account plan has not been changed.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSelectedPlan(null);
+                      setPaymentDone(false);
+                    }}
+                    className="mt-6 rounded-lg bg-indigo-600 px-6 py-3 font-semibold text-white hover:bg-indigo-700"
+                  >
+                    Back to Plans
+                  </button>
+                </div>
+              ) : (
+                <div className="max-w-xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+                  <h3 className="text-2xl font-bold">Checkout</h3>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Review your selected subscription plan.
+                  </p>
+
+                  <div className="mt-6 rounded-xl bg-indigo-50 p-5">
+                    <p className="text-sm text-indigo-600">Selected Plan</p>
+                    <h4 className="mt-2 text-2xl font-bold">
+                      {selectedPlan.name}
+                    </h4>
+                    <p className="mt-2 text-3xl font-bold text-indigo-700">
+                      {selectedPlan.price}
+                      <span className="text-sm font-normal text-slate-500">
+                        {" "} / month
+                      </span>
+                    </p>
+                  </div>
+
+                  <p className="mt-5 text-sm text-amber-700">
+                    Demo checkout only. No actual payment will be collected.
+                  </p>
+
+                  <button
+                    onClick={() => setPaymentDone(true)}
+                    className="mt-5 w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white hover:bg-indigo-700"
+                  >
+                    Simulate Payment
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedPlan(null)}
+                    className="mt-3 w-full rounded-lg border border-slate-300 py-3 font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Back to Plans
+                  </button>
+                </div>
+              )}
             </section>
           )}
 
           {active === "Settings" && (
             <section className="max-w-2xl rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
               <h3 className="text-xl font-bold">Business Settings</h3>
-              <p className="mt-1 text-sm text-slate-500">Manage your workspace information.</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Manage your workspace information.
+              </p>
 
               <form onSubmit={saveSettings} className="mt-6 space-y-5">
                 <div>
-                  <label className="mb-2 block text-sm font-medium">Business Name</label>
+                  <label className="mb-2 block text-sm font-medium">
+                    Business Name
+                  </label>
                   <input
                     value={businessName}
                     onChange={(e) => setBusinessName(e.target.value)}
@@ -357,8 +555,11 @@ export default function Home() {
                     required
                   />
                 </div>
+
                 <div>
-                  <label className="mb-2 block text-sm font-medium">Owner Name</label>
+                  <label className="mb-2 block text-sm font-medium">
+                    Owner Name
+                  </label>
                   <input
                     value={ownerName}
                     onChange={(e) => setOwnerName(e.target.value)}
@@ -366,8 +567,11 @@ export default function Home() {
                     required
                   />
                 </div>
+
                 <div>
-                  <label className="mb-2 block text-sm font-medium">Account Email</label>
+                  <label className="mb-2 block text-sm font-medium">
+                    Account Email
+                  </label>
                   <input
                     type="email"
                     value={businessEmail}
@@ -375,10 +579,17 @@ export default function Home() {
                     className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-slate-500"
                   />
                 </div>
-                <button type="submit" className="rounded-lg bg-indigo-600 px-6 py-3 font-semibold text-white hover:bg-indigo-700">
+
+                <button
+                  type="submit"
+                  className="rounded-lg bg-indigo-600 px-6 py-3 font-semibold text-white hover:bg-indigo-700"
+                >
                   Save Settings
                 </button>
-                {savedMessage && <p className="text-sm text-emerald-600">{savedMessage}</p>}
+
+                {savedMessage && (
+                  <p className="text-sm text-emerald-600">{savedMessage}</p>
+                )}
               </form>
             </section>
           )}
