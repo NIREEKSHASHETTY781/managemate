@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -94,6 +93,7 @@ export default function Home() {
     "Overview",
     "Customers",
     "Import Customers",
+    "Bulk Requirements",
     "Appointments",
     "Reports",
     "Subscription",
@@ -357,6 +357,8 @@ export default function Home() {
                     router.push("/customers");
                   } else if (item === "Import Customers") {
                     router.push("/import-customers");
+                  } else if (item === "Bulk Requirements") {
+                    router.push("/bulk-requirements");
                   } else if (item === "Appointments") {
                     router.push("/appointments");
                   } else {
